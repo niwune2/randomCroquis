@@ -3,13 +3,16 @@
 
   const $ = (sel) => document.querySelector(sel);
 
-  // 画像UI
+  // DOM 参照
   const art = $('#art');
   const stage = $('#stage');
   const imageWrap = $('#imageWrap');
-  const remain = $('#remain');
   const stat = $('#stat');
   const announcer = $('#announce');
+
+  const timeFill = $('#timeFill');
+  const timeText = $('#timeText');
+  const sessionText = $('#sessionText');
 
   // ファイル操作
   const pickFilesBtn = $('#pickFiles');
@@ -23,13 +26,21 @@
   const prevBtn = $('#prevBtn');
   const nextBtn = $('#nextBtn');
 
-  // 表示設定
+  // 表示・セッション設定
   const intervalInput = $('#interval');
+  const targetCountInput = $('#targetCount');
   const shuffleBtn = $('#shuffleBtn');
   const reshuffleBtn = $('#reshuffleBtn');
   const fsBtn = $('#fsBtn');
 
-  // 終了音
+  // 終了画像
+  const finishImageBtn = $('#finishImageBtn');
+  const finishImageFileInput = $('#finishImageFile');
+  const finishImageName = $('#finishImageName');
+
+  // 終了音 UI
+  const sfxPanelToggle = $('#sfxPanelToggle');
+  const sfxPanel = $('#sfxPanel');
   const pickAudioBtn = $('#pickAudio');
   const hiddenAudio = $('#hiddenAudio');
   const sfxToggleBtn = $('#sfxToggle');
@@ -43,13 +54,19 @@
   let entries = [];             // { id, name, url }
   let index = 0;
   let playing = false;
-  let shuffleOn = true;         // 既定ON
+  let shuffleOn = true;
 
   let intervalMs = 60000;
   let endTime = 0;
   let rafId = null;
 
-  // 終了音 状態
+  // セッション指定枚数＋終了画像
+  let targetCount = 0;          // 0 = 無制限
+  let sessionCount = 0;         // 今のセッションで自動切替した枚数
+  let finished = false;
+  let finishImage = { url: null, name: '' };
+
+  // 終了音
   const sfx = {
     enabled: true,
     mode: 'every',   // 'every' | 'last'
@@ -80,9 +97,23 @@
     stat.textContent = `${entries.length ? (index + 1) : 0} / ${entries.length} 枚`;
   };
 
-  const setProgress = (ratio) => {
-    const deg = `${Math.floor(360 * Math.min(1, Math.max(0, ratio)))}deg`;
-    stage.style.setProperty('--deg', deg);
+  const updateTimeBar = (ratio, secLeft) => {
+    const r = Math.min(1, Math.max(0, ratio || 0));
+    if (timeFill) {
+      timeFill.style.transform = `scaleX(${r})`;
+    }
+    if (timeText) {
+      timeText.innerHTML = `<strong>${secLeft}</strong> 秒`;
+    }
+  };
+
+  const updateSessionInfo = () => {
+    if (!sessionText) return;
+    if (targetCount > 0) {
+      sessionText.textContent = `枚数: ${sessionCount} / ${targetCount}`;
+    } else {
+      sessionText.textContent = '枚数: 無制限';
+    }
   };
 
   const validateInterval = () => {
@@ -90,7 +121,19 @@
     const fixed = clamp(isNaN(raw) ? 60 : Math.round(raw / 5) * 5, 5, 600);
     if (fixed !== raw) intervalInput.value = fixed;
     intervalMs = fixed * 1000;
-    remain.textContent = fixed;
+    updateTimeBar(0, fixed);
+  };
+
+  const validateTargetCount = () => {
+    const raw = Number(targetCountInput.value);
+    if (!raw || isNaN(raw) || raw < 0) {
+      targetCount = 0;
+      targetCountInput.value = 0;
+    } else {
+      targetCount = Math.floor(raw);
+    }
+    // セッション中に変更された場合、ラベルだけ更新
+    updateSessionInfo();
   };
 
   const updateShuffleUI = () => {
@@ -106,18 +149,19 @@
     shuffleInPlace(rest);
     entries = [current, ...rest];
     index = 0;
+    show(index);
     preloadNext();
-    resetCountdown();
-    updateStat();
     announce('順序を再シャッフルしました');
   };
 
   // ==== 終了音 ====
-  function revokeSfxUrl(){
-    if (sfx.url) { try { URL.revokeObjectURL(sfx.url); } catch(_){} }
-    sfx.url = null;
-  }
-  function setSfxFromFile(file){
+  const revokeSfxUrl = () => {
+    if (sfx.url) {
+      try { URL.revokeObjectURL(sfx.url); } catch (_) {}
+      sfx.url = null;
+    }
+  };
+  const setSfxFromFile = (file) => {
     revokeSfxUrl();
     const url = URL.createObjectURL(file);
     const audio = new Audio(url);
@@ -127,46 +171,43 @@
     sfx.url = url;
     sfx.name = file.name;
     sfxName.textContent = file.name;
-    sfxToggleBtn.disabled = false;
-    sfxTestBtn.disabled = false;
-    sfxModeSel.disabled = false;
-    sfxVolumeRange.disabled = false;
-  }
-  function playSfx(trigger){
-    // trigger: 'auto' | 'manual'
+  };
+  const playSfxOnce = () => {
     if (!sfx.enabled || !sfx.audio) return;
-
-    // 鳴動タイミング
-    if (sfx.mode === 'last') {
-      // 最後の画像から次へ自動切替する瞬間のみ鳴らす
-      // ループ仕様のため「最後＝配列末尾」
-      const isLast = entries.length >= 2 && index === entries.length - 1;
-      if (!isLast) return;
-      if (trigger !== 'auto') return; // 手動時は鳴らさない
-    } else {
-      // every
-      if (trigger !== 'auto') return; // 手動時は鳴らさない
-    }
-
     try {
       sfx.audio.currentTime = 0;
       sfx.audio.volume = sfx.vol;
-      sfx.audio.play().catch(err => {
-        console.warn('終了音の再生に失敗:', err);
-      });
+      sfx.audio.play().catch(err => console.warn('終了音の再生に失敗:', err));
     } catch (e) {
       console.warn('終了音の再生に失敗:', e);
     }
-  }
+  };
+
+  // ==== 終了画像 ====
+  const revokeFinishImageUrl = () => {
+    if (finishImage.url) {
+      try { URL.revokeObjectURL(finishImage.url); } catch (_) {}
+      finishImage.url = null;
+    }
+  };
+
+  const setFinishImageFromFile = (file) => {
+    revokeFinishImageUrl();
+    const url = URL.createObjectURL(file);
+    finishImage.url = url;
+    finishImage.name = file.name;
+    finishImageName.textContent = file.name;
+  };
 
   // ==== 画像読み込み ====
-  function revokeAllImages(){
+  const revokeAllImages = () => {
     entries.forEach(e => { try { URL.revokeObjectURL(e.url); } catch(_){} });
-  }
+  };
 
-  async function loadFromFileList(fileList) {
+  const loadFromFileList = async (fileList) => {
     if (!fileList || !fileList.length) return;
     stop();
+    finished = false;
     revokeAllImages();
     files = Array.from(fileList).filter(f => f.type.startsWith('image/'));
     if (!files.length){
@@ -174,23 +215,21 @@
       return;
     }
     entries = files.map(f => ({ id: uid(), name: f.name, url: URL.createObjectURL(f) }));
-    if (shuffleOn && entries.length > 1) {
-      shuffleInPlace(entries);
-    }
+    if (shuffleOn && entries.length > 1) shuffleInPlace(entries);
     index = 0;
-    await show(index);
-    updateStat();
+    show(index);
     preloadNext();
     updateShuffleUI();
-  }
+  };
 
-  async function loadFromDirectory() {
+  const loadFromDirectory = async () => {
     if (!window.showDirectoryPicker) {
       alert('この機能はChrome系ブラウザでのみ動作します。フォルダではなく複数ファイル選択をご利用ください。');
       return;
     }
     try {
       stop();
+      finished = false;
       revokeAllImages();
       const dirHandle = await window.showDirectoryPicker({ mode: 'read' });
       const picked = [];
@@ -206,12 +245,9 @@
       }
       files = picked;
       entries = files.map(f => ({ id: uid(), name: f.name, url: URL.createObjectURL(f) }));
-      if (shuffleOn && entries.length > 1) {
-        shuffleInPlace(entries);
-      }
+      if (shuffleOn && entries.length > 1) shuffleInPlace(entries);
       index = 0;
-      await show(index);
-      updateStat();
+      show(index);
       preloadNext();
       updateShuffleUI();
     } catch (err) {
@@ -219,115 +255,173 @@
       console.error(err);
       alert('フォルダの読み込みに失敗しました。権限やブラウザ設定を確認してください。');
     }
-  }
+  };
 
   // ==== 表示 ====
-  async function show(i){
+  const show = (i) => {
     if (!entries.length){
       art.removeAttribute('src');
       art.alt = '画像が未選択です。上部のボタンから読み込んでください。';
+      updateStat();
       return;
     }
     index = (i + entries.length) % entries.length;
     const e = entries[index];
 
-    return new Promise((resolve) => {
-      art.onload = () => {
-        updateStat();
-        resolve();
-      };
-      art.onerror = () => {
-        console.warn('壊れた画像をスキップ:', e.name);
-        next();        // 壊れていたら次へ
-        resolve();
-      };
-      art.src = e.url;
-      art.alt = e.name;
-    });
-  }
+    art.onload = () => {
+      updateStat();
+    };
+    art.onerror = () => {
+      console.warn('壊れた画像をスキップ:', e.name);
+      if (entries.length > 1) {
+        entries.splice(index, 1);
+        index = 0;
+        show(index);
+      } else {
+        revokeAllImages();
+        entries = [];
+        index = 0;
+        show(0);
+      }
+    };
+    art.src = e.url;
+    art.alt = e.name;
+  };
 
-  function next(auto=false){
+  const next = () => {
     if (!entries.length) return;
-    if (auto) playSfx('auto');          // 自動切替の直前に終了音
     index = (index + 1) % entries.length;
     show(index);
     preloadNext();
-    if (auto) resetCountdown();
-  }
+  };
 
-  function prev(){
+  const prev = () => {
     if (!entries.length) return;
     index = (index - 1 + entries.length) % entries.length;
     show(index);
     preloadNext();
-    resetCountdown();
-  }
+  };
 
-  function preloadNext(){
+  const preloadNext = () => {
     if (!entries.length) return;
     const nextIdx = (index + 1) % entries.length;
     const url = entries[nextIdx].url;
     const img = new Image();
     img.src = url;
-  }
+  };
+
+  // ==== セッション終了処理 ====
+  const finishSession = () => {
+    playing = false;
+    finished = true;
+    togglePlayBtn.setAttribute('aria-pressed','false');
+    playLabel.textContent = '再生';
+    if (rafId) cancelAnimationFrame(rafId);
+    rafId = null;
+
+    // 終了用画像があれば差し替え
+    if (finishImage.url) {
+      art.onload = () => { /* 特に何もしない */ };
+      art.src = finishImage.url;
+      art.alt = finishImage.name || 'セッション終了';
+    } else {
+      // 終了画像がない場合は、現在の画像のままでも良いが alt だけ更新
+      art.alt = 'セッション終了';
+    }
+
+    // 終了音（常に1回だけ）
+    playSfxOnce();
+    announce('セッションを終了しました');
+    updateSessionInfo();
+  };
 
   // ==== タイマー ====
-  function resetTimerVisual(){
-    setProgress(0);
-    remain.textContent = Math.round(intervalMs/1000);
-  }
+  const resetTimerVisual = () => {
+    const sec = Math.round(intervalMs/1000);
+    updateTimeBar(0, sec);
+  };
 
-  function resetCountdown(){
+  const resetCountdown = () => {
     if (!playing) return;
     endTime = performance.now() + intervalMs;
-  }
+  };
 
-  function tick(now){
-    if (!playing){
-      setProgress(0);
+  const autoStep = () => {
+    // 指定枚数チェック（0 = 無制限）
+    if (targetCount > 0) {
+      if (sessionCount >= targetCount) {
+        finishSession();
+        return;
+      }
+      sessionCount += 1;
+      updateSessionInfo();
+    }
+    // 終了音モードに従った再生
+    if (sfx.enabled && sfx.audio) {
+      if (sfx.mode === 'every') {
+        playSfxOnce();
+      } else if (sfx.mode === 'last') {
+        const hasLoop = entries.length > 1;
+        if (hasLoop && index === entries.length - 1) {
+          playSfxOnce();
+        }
+      }
+    }
+    next();
+  };
+
+  const tick = (now) => {
+    if (!playing) {
+      // 停止中は 0 で固定（視覚的にはそのままでもOK）
     } else {
       const msLeft = Math.max(0, endTime - now);
       const secLeft = Math.ceil(msLeft / 1000);
       const ratio = 1 - (msLeft / intervalMs);
-      setProgress(ratio);
-      remain.textContent = secLeft;
-      if (msLeft <= 0){
-        // 自動切替フロー
-        next(true);                  // true = 自動切替
-        endTime = performance.now() + intervalMs;
+      updateTimeBar(ratio, secLeft);
+
+      if (msLeft <= 0) {
+        autoStep();
+        if (playing) { // finishSession されていなければ継続
+          endTime = performance.now() + intervalMs;
+        } else {
+          resetTimerVisual();
+        }
       }
     }
     rafId = requestAnimationFrame(tick);
-  }
+  };
 
-  function start(){
-    if (!entries.length){
+  const start = () => {
+    if (!entries.length) {
       alert('まず画像を読み込んでください。');
       return;
     }
     if (playing) return;
     playing = true;
+    finished = false;
+    sessionCount = 0;
+    updateSessionInfo();
     togglePlayBtn.setAttribute('aria-pressed','true');
-    playLabel.textContent = '停止';  // 再生中は「停止」
+    playLabel.textContent = '停止';
     endTime = performance.now() + intervalMs;
     rafId = requestAnimationFrame(tick);
-  }
+  };
 
-  function stop(){
+  const stop = () => {
     playing = false;
     togglePlayBtn.setAttribute('aria-pressed','false');
-    playLabel.textContent = '再生';  // 停止時は「再生」
+    playLabel.textContent = '再生';
     if (rafId) cancelAnimationFrame(rafId);
     rafId = null;
     resetTimerVisual();
-  }
+  };
 
-  function togglePlay(){ playing ? stop() : start(); }
+  const togglePlay = () => { playing ? stop() : start(); };
 
-  async function enterFullscreen(){
+  const enterFullscreen = async () => {
     const el = document.documentElement;
-    try { await (el.requestFullscreen?.() || el.webkitRequestFullscreen?.()); } catch(_){}
-  }
+    try { await (el.requestFullscreen?.() || el.webkitRequestFullscreen?.()); } catch(_) {}
+  };
 
   // ==== イベント ====
   pickFilesBtn.addEventListener('click', () => hiddenFile.click());
@@ -335,61 +429,65 @@
   pickFolderBtn.addEventListener('click', loadFromDirectory);
 
   clearListBtn.addEventListener('click', () => {
-    stop(); revokeAllImages(); files = []; entries = []; index = 0; updateStat();
-    art.removeAttribute('src'); art.alt = '読み込みが解除されました。';
+    stop();
+    finished = false;
+    revokeAllImages();
+    entries = [];
+    index = 0;
+    show(0);
     updateShuffleUI();
   });
 
   togglePlayBtn.addEventListener('click', togglePlay);
-  nextBtn.addEventListener('click', () => next(false)); // 手動時は音を鳴らさない仕様
-  prevBtn.addEventListener('click', prev);
+  nextBtn.addEventListener('click', () => {
+    if (!entries.length) return;
+    finished = false;
+    next();
+    resetCountdown();
+  });
+  prevBtn.addEventListener('click', () => {
+    if (!entries.length) return;
+    finished = false;
+    prev();
+    resetCountdown();
+  });
 
-  intervalInput.addEventListener('change', () => { validateInterval(); resetCountdown(); });
+  intervalInput.addEventListener('change', () => {
+    validateInterval();
+    resetCountdown();
+  });
+  targetCountInput.addEventListener('change', () => {
+    validateTargetCount();
+  });
 
-  // シャッフル：ONになった瞬間に必ず並び替え
+  // シャッフルトグル
   shuffleBtn.addEventListener('click', () => {
     shuffleOn = !shuffleOn;
     updateShuffleUI();
-    if (shuffleOn) {
-      reshuffleKeepCurrent();
-    }
+    if (shuffleOn) reshuffleKeepCurrent();
   });
-
-  // 任意タイミングで再シャッフル
   reshuffleBtn.addEventListener('click', () => {
-    if (entries.length <= 1) return;
     reshuffleKeepCurrent();
   });
 
   fsBtn.addEventListener('click', enterFullscreen);
 
-  // キーボード
-  window.addEventListener('keydown', (e) => {
-    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT')) return;
-    const key = e.key.toLowerCase();
-    if (key === ' ') { e.preventDefault(); togglePlay(); }
-    else if (key === 'arrowright') { next(false); }
-    else if (key === 'arrowleft') { prev(); }
-    else if (key === 'f') { enterFullscreen(); }
-    else if (key === 's') { shuffleBtn.click(); }
-    else if (key === '+') {
-      const v = clamp(Number(intervalInput.value) + 5, 5, 600);
-      intervalInput.value = v; validateInterval(); resetCountdown();
-    }
-    else if (key === '-') {
-      const v = clamp(Number(intervalInput.value) - 5, 5, 600);
-      intervalInput.value = v; validateInterval(); resetCountdown();
-    }
-    else if (key === 'r'){
-      intervalInput.value = 60; validateInterval();
-      if (!shuffleOn) shuffleBtn.click();  // ONへ戻し & 並び替え
-      if (entries.length){
-        reshuffleKeepCurrent();
-      }
-    }
+  // 終了画像
+  finishImageBtn.addEventListener('click', () => finishImageFileInput.click());
+  finishImageFileInput.addEventListener('change', (e) => {
+    const f = e.target.files && e.target.files[0];
+    if (!f) return;
+    setFinishImageFromFile(f);
   });
 
-  // ==== 終了音イベント ====
+  // 終了音パネル開閉
+  sfxPanelToggle.addEventListener('click', () => {
+    const isOpen = sfxPanel.classList.toggle('open');
+    sfxPanelToggle.setAttribute('aria-expanded', String(isOpen));
+    sfxPanelToggle.textContent = isOpen ? '終了音設定 ▲' : '終了音設定 ▾';
+  });
+
+  // 終了音 UI
   pickAudioBtn.addEventListener('click', () => hiddenAudio.click());
   hiddenAudio.addEventListener('change', (e) => {
     const f = e.target.files && e.target.files[0];
@@ -415,27 +513,65 @@
   });
 
   sfxTestBtn.addEventListener('click', () => {
-    // ユーザー操作での再生（ブラウザの自動再生制限を満たす）
-    if (!sfx.audio) { alert('先に音声ファイルを選択してください。'); return; }
+    if (!sfx.audio) {
+      alert('先に音声ファイルを選択してください。');
+      return;
+    }
     try {
       sfx.audio.currentTime = 0;
       sfx.audio.volume = sfx.vol;
-      sfx.audio.play().catch(err => {
-        console.warn('試聴に失敗:', err);
-      });
+      sfx.audio.play().catch(err => console.warn('試聴に失敗:', err));
     } catch (e) {
       console.warn('試聴に失敗:', e);
     }
   });
 
-  // ==== 初期UI ====
+  // キーボード
+  window.addEventListener('keydown', (e) => {
+    const target = e.target;
+    if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
+    const key = e.key.toLowerCase();
+
+    if (key === ' ') {
+      e.preventDefault();
+      togglePlay();
+    } else if (key === 'arrowright') {
+      nextBtn.click();
+    } else if (key === 'arrowleft') {
+      prevBtn.click();
+    } else if (key === 'f') {
+      enterFullscreen();
+    } else if (key === 's') {
+      shuffleBtn.click();
+    } else if (key === '+') {
+      const v = clamp(Number(intervalInput.value) + 5, 5, 600);
+      intervalInput.value = v; validateInterval(); resetCountdown();
+    } else if (key === '-') {
+      const v = clamp(Number(intervalInput.value) - 5, 5, 600);
+      intervalInput.value = v; validateInterval(); resetCountdown();
+    } else if (key === 'r') {
+      intervalInput.value = 60; validateInterval();
+      targetCountInput.value = 0; validateTargetCount();
+      if (!shuffleOn) shuffleBtn.click();
+      if (entries.length) reshuffleKeepCurrent();
+      sessionCount = 0;
+      finished = false;
+      updateSessionInfo();
+    }
+  });
+
+  // 初期UI
   validateInterval();
+  validateTargetCount();
   updateStat();
   updateShuffleUI();
+  resetTimerVisual();
+  updateSessionInfo();
 
-  // 破棄時
+  // 終了時クリーンアップ
   window.addEventListener('beforeunload', () => {
     revokeAllImages();
     revokeSfxUrl();
+    revokeFinishImageUrl();
   });
 })();
