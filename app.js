@@ -6,13 +6,16 @@
   // DOM 参照
   const art = $('#art');
   const stage = $('#stage');
-  const imageWrap = $('#imageWrap');
   const stat = $('#stat');
   const announcer = $('#announce');
 
   const timeFill = $('#timeFill');
   const timeText = $('#timeText');
   const sessionText = $('#sessionText');
+
+  // カウントオーバーレイ
+  const countOverlay = $('#countOverlay');
+  const countNumber = $('#countNumber');
 
   // ファイル操作
   const pickFilesBtn = $('#pickFiles');
@@ -53,16 +56,21 @@
   let files = [];
   let entries = [];             // { id, name, url }
   let index = 0;
+
   let playing = false;
   let shuffleOn = true;
 
+  // 表示モード: 画像表示中 or 3秒カウント中
+  const TRANSITION_MS = 3000;
+  let mode = 'image';           // 'image' | 'transition'
   let intervalMs = 60000;
-  let endTime = 0;
+  let endTime = 0;              // 画像表示の終了時刻
+  let transitionEndTime = 0;    // 3秒カウントの終了時刻
   let rafId = null;
 
   // セッション指定枚数＋終了画像
   let targetCount = 0;          // 0 = 無制限
-  let sessionCount = 0;         // 今のセッションで自動切替した枚数
+  let sessionCount = 0;         // 今のセッションで「何枚目を表示中か」
   let finished = false;
   let finishImage = { url: null, name: '' };
 
@@ -110,10 +118,27 @@
   const updateSessionInfo = () => {
     if (!sessionText) return;
     if (targetCount > 0) {
+      // sessionCount は「いま何枚目を表示中か」
       sessionText.textContent = `枚数: ${sessionCount} / ${targetCount}`;
     } else {
       sessionText.textContent = '枚数: 無制限';
     }
+  };
+
+  const showCountdownOverlay = (sec) => {
+    if (!countOverlay || !countNumber) return;
+    countNumber.textContent = String(sec);
+    countOverlay.classList.add('active');
+  };
+
+  const updateCountdownOverlay = (sec) => {
+    if (!countOverlay || !countNumber) return;
+    countNumber.textContent = String(sec);
+  };
+
+  const hideCountdownOverlay = () => {
+    if (!countOverlay) return;
+    countOverlay.classList.remove('active');
   };
 
   const validateInterval = () => {
@@ -121,7 +146,11 @@
     const fixed = clamp(isNaN(raw) ? 60 : Math.round(raw / 5) * 5, 5, 600);
     if (fixed !== raw) intervalInput.value = fixed;
     intervalMs = fixed * 1000;
-    updateTimeBar(0, fixed);
+    const sec = Math.round(intervalMs / 1000);
+    // 停止中 or 画像モードのときだけバーを初期化
+    if (!playing || mode === 'image') {
+      updateTimeBar(0, sec);
+    }
   };
 
   const validateTargetCount = () => {
@@ -132,7 +161,6 @@
     } else {
       targetCount = Math.floor(raw);
     }
-    // セッション中に変更された場合、ラベルだけ更新
     updateSessionInfo();
   };
 
@@ -161,6 +189,7 @@
       sfx.url = null;
     }
   };
+
   const setSfxFromFile = (file) => {
     revokeSfxUrl();
     const url = URL.createObjectURL(file);
@@ -172,6 +201,7 @@
     sfx.name = file.name;
     sfxName.textContent = file.name;
   };
+
   const playSfxOnce = () => {
     if (!sfx.enabled || !sfx.audio) return;
     try {
@@ -208,7 +238,12 @@
     if (!fileList || !fileList.length) return;
     stop();
     finished = false;
+    sessionCount = 0;
+    updateSessionInfo();
+    mode = 'image';
+    hideCountdownOverlay();
     revokeAllImages();
+
     files = Array.from(fileList).filter(f => f.type.startsWith('image/'));
     if (!files.length){
       alert('画像ファイルが選択されていません。');
@@ -230,7 +265,12 @@
     try {
       stop();
       finished = false;
+      sessionCount = 0;
+      updateSessionInfo();
+      mode = 'image';
+      hideCountdownOverlay();
       revokeAllImages();
+
       const dirHandle = await window.showDirectoryPicker({ mode: 'read' });
       const picked = [];
       for await (const [, handle] of dirHandle.entries()) {
@@ -314,80 +354,100 @@
   const finishSession = () => {
     playing = false;
     finished = true;
+    mode = 'image';
     togglePlayBtn.setAttribute('aria-pressed','false');
     playLabel.textContent = '再生';
     if (rafId) cancelAnimationFrame(rafId);
     rafId = null;
+    hideCountdownOverlay();
 
     // 終了用画像があれば差し替え
     if (finishImage.url) {
-      art.onload = () => { /* 特に何もしない */ };
+      art.onload = () => {};
       art.src = finishImage.url;
       art.alt = finishImage.name || 'セッション終了';
     } else {
-      // 終了画像がない場合は、現在の画像のままでも良いが alt だけ更新
       art.alt = 'セッション終了';
     }
 
-    // 終了音（常に1回だけ）
+    // 終了音（1回だけ）
     playSfxOnce();
     announce('セッションを終了しました');
     updateSessionInfo();
   };
 
   // ==== タイマー ====
+  const startImageInterval = (now) => {
+    const base = (typeof now === 'number') ? now : performance.now();
+    endTime = base + intervalMs;
+    const sec = Math.round(intervalMs / 1000);
+    updateTimeBar(0, sec);
+  };
+
   const resetTimerVisual = () => {
     const sec = Math.round(intervalMs/1000);
     updateTimeBar(0, sec);
   };
 
-  const resetCountdown = () => {
-    if (!playing) return;
-    endTime = performance.now() + intervalMs;
-  };
-
-  const autoStep = () => {
-    // 指定枚数チェック（0 = 無制限）
-    if (targetCount > 0) {
-      if (sessionCount >= targetCount) {
-        finishSession();
-        return;
-      }
-      sessionCount += 1;
-      updateSessionInfo();
-    }
-    // 終了音モードに従った再生
-    if (sfx.enabled && sfx.audio) {
-      if (sfx.mode === 'every') {
-        playSfxOnce();
-      } else if (sfx.mode === 'last') {
-        const hasLoop = entries.length > 1;
-        if (hasLoop && index === entries.length - 1) {
-          playSfxOnce();
-        }
-      }
-    }
-    next();
-  };
-
   const tick = (now) => {
-    if (!playing) {
-      // 停止中は 0 で固定（視覚的にはそのままでもOK）
-    } else {
-      const msLeft = Math.max(0, endTime - now);
-      const secLeft = Math.ceil(msLeft / 1000);
-      const ratio = 1 - (msLeft / intervalMs);
-      updateTimeBar(ratio, secLeft);
+    if (playing) {
+      if (mode === 'image') {
+        const msLeft = Math.max(0, endTime - now);
+        const secLeft = Math.ceil(msLeft / 1000);
+        const ratio = 1 - (msLeft / intervalMs);
+        updateTimeBar(ratio, secLeft);
 
-      if (msLeft <= 0) {
-        autoStep();
-        if (playing) { // finishSession されていなければ継続
-          endTime = performance.now() + intervalMs;
+        if (msLeft <= 0) {
+          // この画像を指定秒数だけ見終えた
+          if (targetCount > 0 && sessionCount >= targetCount) {
+            // 目標枚数まで見終わっている → 終了画像へ
+            finishSession();
+          } else {
+            // 次の画像へ行く前に 3 秒カウント
+            mode = 'transition';
+            transitionEndTime = now + TRANSITION_MS;
+            showCountdownOverlay(3);
+          }
+        }
+      } else if (mode === 'transition') {
+        const msLeft = Math.max(0, transitionEndTime - now);
+        if (msLeft <= 0) {
+          // カウント終了 → 次の画像へ
+          // 終了音モードに応じた再生
+          if (sfx.enabled && sfx.audio) {
+            if (sfx.mode === 'every') {
+              playSfxOnce();
+            } else if (sfx.mode === 'last') {
+              const hasLoop = entries.length > 1;
+              if (hasLoop && index === entries.length - 1) {
+                playSfxOnce();
+              }
+            }
+          }
+
+          // 次の画像へ
+          next();
+
+          // 目標枚数モードのときは、ここで「何枚目か」を増やす
+          if (targetCount > 0) {
+            if (sessionCount === 0) {
+              sessionCount = 1;
+            } else {
+              sessionCount += 1;
+            }
+            updateSessionInfo();
+          }
+
+          hideCountdownOverlay();
+          mode = 'image';
+          startImageInterval(now);
         } else {
-          resetTimerVisual();
+          const secLeft = Math.ceil(msLeft / 1000);
+          updateCountdownOverlay(secLeft);
         }
       }
     }
+
     rafId = requestAnimationFrame(tick);
   };
 
@@ -397,13 +457,27 @@
       return;
     }
     if (playing) return;
-    playing = true;
-    finished = false;
-    sessionCount = 0;
+
+    // 終了画面からの再スタート時は元の画像に戻す
+    if (finished) {
+      finished = false;
+      if (entries.length) {
+        show(index);
+      }
+    }
+
+    // 新しいセッション開始（初回 or カウントが0のとき）
+    if (sessionCount === 0 && targetCount > 0) {
+      sessionCount = 1;
+    }
     updateSessionInfo();
+
+    playing = true;
+    mode = 'image';
+    hideCountdownOverlay();
     togglePlayBtn.setAttribute('aria-pressed','true');
     playLabel.textContent = '停止';
-    endTime = performance.now() + intervalMs;
+    startImageInterval();
     rafId = requestAnimationFrame(tick);
   };
 
@@ -413,6 +487,8 @@
     playLabel.textContent = '再生';
     if (rafId) cancelAnimationFrame(rafId);
     rafId = null;
+    hideCountdownOverlay();
+    mode = 'image';
     resetTimerVisual();
   };
 
@@ -431,6 +507,10 @@
   clearListBtn.addEventListener('click', () => {
     stop();
     finished = false;
+    sessionCount = 0;
+    updateSessionInfo();
+    mode = 'image';
+    hideCountdownOverlay();
     revokeAllImages();
     entries = [];
     index = 0;
@@ -439,23 +519,40 @@
   });
 
   togglePlayBtn.addEventListener('click', togglePlay);
+
   nextBtn.addEventListener('click', () => {
     if (!entries.length) return;
     finished = false;
+    hideCountdownOverlay();
+    mode = 'image';
     next();
-    resetCountdown();
+    if (playing) {
+      startImageInterval();
+    } else {
+      resetTimerVisual();
+    }
   });
+
   prevBtn.addEventListener('click', () => {
     if (!entries.length) return;
     finished = false;
+    hideCountdownOverlay();
+    mode = 'image';
     prev();
-    resetCountdown();
+    if (playing) {
+      startImageInterval();
+    } else {
+      resetTimerVisual();
+    }
   });
 
   intervalInput.addEventListener('change', () => {
     validateInterval();
-    resetCountdown();
+    if (playing && mode === 'image') {
+      startImageInterval();
+    }
   });
+
   targetCountInput.addEventListener('change', () => {
     validateTargetCount();
   });
@@ -466,6 +563,7 @@
     updateShuffleUI();
     if (shuffleOn) reshuffleKeepCurrent();
   });
+
   reshuffleBtn.addEventListener('click', () => {
     reshuffleKeepCurrent();
   });
@@ -545,10 +643,12 @@
       shuffleBtn.click();
     } else if (key === '+') {
       const v = clamp(Number(intervalInput.value) + 5, 5, 600);
-      intervalInput.value = v; validateInterval(); resetCountdown();
+      intervalInput.value = v; validateInterval();
+      if (playing && mode === 'image') startImageInterval();
     } else if (key === '-') {
       const v = clamp(Number(intervalInput.value) - 5, 5, 600);
-      intervalInput.value = v; validateInterval(); resetCountdown();
+      intervalInput.value = v; validateInterval();
+      if (playing && mode === 'image') startImageInterval();
     } else if (key === 'r') {
       intervalInput.value = 60; validateInterval();
       targetCountInput.value = 0; validateTargetCount();
@@ -556,6 +656,8 @@
       if (entries.length) reshuffleKeepCurrent();
       sessionCount = 0;
       finished = false;
+      mode = 'image';
+      hideCountdownOverlay();
       updateSessionInfo();
     }
   });

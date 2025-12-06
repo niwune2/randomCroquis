@@ -108,9 +108,31 @@
       image-orientation:from-image;
     }
 
+    /* 3秒カウントオーバーレイ */
+    .count-overlay{
+      position:absolute;
+      inset:0;
+      background:rgba(0,0,0,.6);
+      display:none;
+      align-items:center;
+      justify-content:center;
+      pointer-events:none;
+      z-index:2;
+    }
+    .count-overlay.active{
+      display:flex;
+    }
+    .count-number{
+      font-size:clamp(48px, 10vw, 96px);
+      font-weight:700;
+      color:#fff;
+      text-shadow:0 0 20px rgba(0,0,0,.8);
+    }
+
     .overlay{
       position:absolute; inset:auto 10px 10px auto; pointer-events:none;
       display:flex; flex-direction:column; align-items:flex-end; gap:6px;
+      z-index:3;
     }
     .stat{
       padding:4px 8px; border-radius:8px; background:rgba(0,0,0,.6);
@@ -227,6 +249,11 @@
 
       <div class="image-wrap" id="imageWrap">
         <img id="art" alt="選択した画像がここに表示されます" />
+      </div>
+
+      <!-- 3秒カウントオーバーレイ -->
+      <div id="countOverlay" class="count-overlay" aria-hidden="true">
+        <div id="countNumber" class="count-number">3</div>
       </div>
 
       <div class="overlay">
