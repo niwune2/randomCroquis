@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <title>クロッキー練習ビューア</title>
+  <title>クロッキー練習ビューア（1枚/2枚）</title>
   <meta name="color-scheme" content="dark light" />
   <style>
     :root{
       --bg:#111; --fg:#eee; --muted:#bdbdbd; --accent:#4aa3ff; --danger:#ff4d6d;
-      --panel:#1a1a1a; --ring:#2a2a2a; --radius:16px; --gap:12px; --btn-h:40px;
-      --maxw:1200px;
+      --panel:#1a1a1a; --radius:16px; --gap:12px; --btn-h:40px; --maxw:1200px;
+      --img-max-h: 70vh; /* JSで上書き */
     }
     html,body{height:100%}
     body{
@@ -20,34 +20,56 @@
     .app{min-height:100%; display:grid; grid-template-rows:auto auto 1fr auto}
 
     header{
-      display:flex; gap:var(--gap); align-items:center; justify-content:space-between;
-      padding:12px clamp(12px,4vw,24px); border-bottom:1px solid #222;
-      background:#0f0f0f; position:sticky; top:0; z-index:10;
+      padding:12px clamp(12px,4vw,24px);
+      border-bottom:1px solid #222;
+      background:#0f0f0f;
+      position:sticky; top:0; z-index:10;
+      display:flex; flex-direction:column; gap:6px;
     }
-    .brand{display:flex; align-items:center; gap:10px; font-weight:700}
+    .brand{display:flex; align-items:center; gap:10px; font-weight:800}
     .brand svg{width:28px;height:28px}
-    .actions{display:flex;gap:var(--gap);flex-wrap:wrap}
-    .btn{
-      height:var(--btn-h); padding:0 12px; border-radius:10px; border:1px solid #2a2a2a;
-      background:#171717; color:var(--fg); display:inline-flex; gap:8px; align-items:center; justify-content:center;
-      cursor:pointer; user-select:none; font-size:.9rem;
+    .purpose{
+      color:var(--muted);
+      font-size:.92rem;
     }
-    .btn.small{height:32px;padding:0 8px;font-size:.85rem}
-    .btn:hover{border-color:#333;background:#1c1c1c}
-    .btn:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
-    .btn.icon{width:var(--btn-h); padding:0}
-    .btn.primary{background:var(--accent); border-color:transparent; color:#001a2e}
-    .btn.danger{background:#2a1016; border-color:#3a1a22; color:#ff8fa3}
-    .btn[disabled]{opacity:.5; pointer-events:none}
 
     .toolbar{
       display:flex; flex-wrap:wrap; gap:var(--gap);
-      padding:12px clamp(12px,4vw,24px); background:#0f0f0f; border-bottom:1px solid #191919;
+      padding:12px clamp(12px,4vw,24px);
+      background:#0f0f0f; border-bottom:1px solid #191919;
+      position:sticky; top:76px; z-index:9;
     }
-    .toolbar .group{
+    .group{
       display:flex; gap:var(--gap); align-items:center; padding:8px;
       background:var(--panel); border:1px solid #242424; border-radius:12px;
+      flex-wrap:wrap;
     }
+
+    .btn{
+      height:var(--btn-h); padding:0 12px; border-radius:10px; border:1px solid #2a2a2a;
+      background:#171717; color:var(--fg);
+      display:inline-flex; gap:8px; align-items:center; justify-content:center;
+      cursor:pointer; user-select:none; font-size:.9rem;
+    }
+    .btn:hover{border-color:#333;background:#1c1c1c}
+    .btn:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+    .btn[disabled]{opacity:.5; pointer-events:none}
+    .btn.icon{width:var(--btn-h); padding:0}
+    .btn.primary{background:var(--accent); border-color:transparent; color:#001a2e}
+    .btn.small{height:32px;padding:0 8px;font-size:.85rem}
+
+    /* モード切替（セグメント） */
+    .seg{
+      display:inline-flex; border:1px solid #2a2a2a; border-radius:12px; overflow:hidden;
+    }
+    .seg button{
+      height:32px; padding:0 12px; border:0; background:#151515; color:var(--muted);
+      cursor:pointer; font-size:.9rem;
+    }
+    .seg button[aria-pressed="true"]{
+      background:var(--accent); color:#001a2e; font-weight:700;
+    }
+
     label{color:var(--muted); font-size:.9rem}
     input[type="number"], select{
       height:var(--btn-h); padding:0 10px; border-radius:10px; border:1px solid #2a2a2a;
@@ -93,55 +115,152 @@
     }
     .timebar-meta strong{color:#fafafa;font-feature-settings:"tnum"}
 
-    .image-wrap{
+    /* ビュー切替 */
+    .views{position:relative}
+    .view{display:none}
+    .view.active{display:block}
+
+    /* 1枚ビュー */
+    .single-wrap{
       padding:10px; box-sizing:border-box;
       display:grid; place-items:center; background:#000;
     }
-
-    /* 画像：長辺700pxまで、かつ画面の70vhまでに制限して縦スクロールを減らす */
-    #art{
+    #singleImg{
       display:block;
       width:auto; height:auto;
       max-width:min(100%, 700px);
-      max-height:min(700px, 70vh);
+      max-height:min(700px, var(--img-max-h));
       object-fit:contain;
       image-orientation:from-image;
+    }
+    .single-stat{
+      position:absolute; right:10px; bottom:10px;
+      padding:4px 8px; border-radius:8px; background:rgba(0,0,0,.6);
+      border:1px solid #262626; color:#e8e8e8; font-size:.9rem;
+      font-feature-settings:"tnum";
+      pointer-events:none;
+    }
+
+    /* 2枚ビュー */
+    .dual-grid{
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:8px;
+      padding:10px;
+      box-sizing:border-box;
+      background:#000;
+    }
+    .pane{
+      border:1px solid #1f1f1f;
+      border-radius:14px;
+      overflow:hidden;
+      background:#050505;
+      display:grid;
+      grid-template-rows:auto 1fr auto;
+      min-width:0;
+    }
+    .pane-head{
+      display:flex; justify-content:space-between; align-items:center;
+      padding:8px 10px;
+      border-bottom:1px solid #141414;
+      color:var(--muted);
+      font-size:.9rem;
+    }
+    .pane-head strong{color:#fafafa}
+    .pane-body{
+      display:grid; place-items:center;
+      padding:8px;
+      min-height:0;
+    }
+    .pane img{
+      display:block;
+      width:auto; height:auto;
+      max-width:100%;
+      max-height:min(700px, var(--img-max-h));
+      object-fit:contain;
+      image-orientation:from-image;
+    }
+    .placeholder{
+      color:#777; font-size:.95rem;
+      border:1px dashed #2a2a2a;
+      border-radius:12px;
+      padding:18px 14px;
+      text-align:center;
+      max-width:90%;
+    }
+    .pane-foot{
+      padding:6px 10px;
+      border-top:1px solid #141414;
+      color:#8c8c8c;
+      font-size:.78rem;
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
     }
 
     /* 3秒カウントオーバーレイ */
     .count-overlay{
       position:absolute;
       inset:0;
-      background:rgba(0,0,0,.6);
+      background:rgba(0,0,0,.60);
       display:none;
       align-items:center;
       justify-content:center;
       pointer-events:none;
-      z-index:2;
-    }
-    .count-overlay.active{
-      display:flex;
-    }
-    .count-number{
-      font-size:clamp(48px, 10vw, 96px);
-      font-weight:700;
-      color:#fff;
-      text-shadow:0 0 20px rgba(0,0,0,.8);
-    }
-
-    .overlay{
-      position:absolute; inset:auto 10px 10px auto; pointer-events:none;
-      display:flex; flex-direction:column; align-items:flex-end; gap:6px;
       z-index:3;
     }
-    .stat{
-      padding:4px 8px; border-radius:8px; background:rgba(0,0,0,.6);
-      border:1px solid #262626; color:#e8e8e8; font-size:.9rem;
+    .count-overlay.active{display:flex}
+    .count-number{
+      font-size:clamp(48px, 10vw, 96px);
+      font-weight:800;
+      color:#fff;
+      text-shadow:0 0 20px rgba(0,0,0,.8);
       font-feature-settings:"tnum";
     }
 
+    /* 終了画面オーバーレイ（1枚/2枚共通） */
+    .finish-overlay{
+      position:absolute;
+      inset:0;
+      background:rgba(0,0,0,.85);
+      display:none;
+      z-index:4;
+      padding:14px;
+      box-sizing:border-box;
+    }
+    .finish-overlay.active{display:grid; place-items:center}
+    .finish-card{
+      width:min(900px, 95%);
+      border:1px solid #2a2a2a;
+      border-radius:16px;
+      background:#0a0a0a;
+      padding:14px;
+      display:grid;
+      gap:10px;
+      justify-items:center;
+    }
+    #finishImg{
+      display:block;
+      width:auto; height:auto;
+      max-width:min(100%, 700px);
+      max-height:min(700px, var(--img-max-h));
+      object-fit:contain;
+    }
+    .finish-text{
+      color:#dcdcdc;
+      font-size:1.05rem;
+      text-align:center;
+    }
+    .finish-sub{
+      color:#9a9a9a;
+      font-size:.85rem;
+      text-align:center;
+    }
+
+    /* 終了音設定パネル */
+    .sfx-panel{display:none; flex-wrap:wrap; gap:8px; align-items:center; margin-left:4px;}
+    .sfx-panel.open{display:flex}
+
     .note{
-      padding:6px 10px 10px;
+      padding:6px clamp(12px,4vw,24px) 10px;
       font-size:.8rem; color:var(--muted);
     }
 
@@ -155,88 +274,109 @@
       border:1px solid #2a2a2a; background:#161616; color:#ddd; font-size:.92rem;
       box-shadow:inset 0 -2px 0 rgba(255,255,255,.03);
     }
-    .hint{opacity:.9}
-
-    /* 終了音設定パネル */
-    .sfx-panel{
-      display:none;
-      flex-wrap:wrap; gap:8px; align-items:center;
-      margin-left:4px;
-    }
-    .sfx-panel.open{display:flex;}
 
     .sr-only{
       position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
       clip:rect(0,0,0,0); white-space:nowrap; border:0;
     }
 
-    @media (max-width:768px){
-      header{flex-direction:column; align-items:stretch}
-      .toolbar{gap:8px}
-      .toolbar .group{flex:1; flex-wrap:wrap; justify-content:space-between}
-      .actions{gap:8px}
+    @media (max-width:900px){
+      .dual-grid{grid-template-columns:1fr}
+      .toolbar{top:92px}
     }
   </style>
 </head>
 <body>
 <div class="app">
 
-  <header id="appHeader">
-    <div class="brand" aria-label="アプリ名">
+  <header>
+    <div class="brand">
       <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
         <path d="M3 12a9 9 0 1 0 18 0A9 9 0 0 0 3 12Zm9-7v14M5 9h14M5 15h14"
               stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
       </svg>
-      <span>クロッキー練習ビューア</span>
+      <span>クロッキー練習ビューア（1枚 / 2枚）</span>
     </div>
-    <div class="actions" role="group" aria-label="ファイル操作">
-      <button id="pickFiles" class="btn" aria-label="画像を選択">画像を選択</button>
-      <button id="pickFolder" class="btn" aria-label="フォルダから読み込む">フォルダ</button>
-      <button id="clearList" class="btn danger" aria-label="読み込みを解除">リセット</button>
+    <div class="purpose">
+      目的：クロッキーを通して <b>イラストの応用力（置き換え・差し替え・アレンジ）</b> を伸ばすためのビューアです。
     </div>
   </header>
 
-  <div class="toolbar" id="appToolbar" role="region" aria-label="再生設定">
+  <div class="toolbar" role="region" aria-label="操作バー">
+
+    <!-- モード -->
+    <div class="group" role="group" aria-label="モード切替">
+      <span style="color:var(--muted);font-size:.9rem;">モード</span>
+      <div class="seg" role="group" aria-label="1枚/2枚">
+        <button id="modeSingle" aria-pressed="true" type="button">1枚</button>
+        <button id="modeDual" aria-pressed="false" type="button">2枚</button>
+      </div>
+    </div>
+
+    <!-- ファイル：1枚 -->
+    <div class="group" id="fileSingle" role="group" aria-label="ファイル操作（1枚）">
+      <button id="pickSingleFiles" class="btn" type="button">画像を選択</button>
+      <button id="pickSingleFolder" class="btn" type="button">フォルダ</button>
+      <button id="clearSingle" class="btn" type="button" style="background:#2a1016;border-color:#3a1a22;color:#ff8fa3;">リセット</button>
+    </div>
+
+    <!-- ファイル：2枚 -->
+    <div class="group" id="fileDual" role="group" aria-label="ファイル操作（2枚）" style="display:none;">
+      <span style="color:var(--muted);font-size:.9rem;">左</span>
+      <button id="pickLeftFiles" class="btn" type="button">画像</button>
+      <button id="pickLeftFolder" class="btn" type="button">フォルダ</button>
+      <button id="clearLeft" class="btn" type="button" style="background:#2a1016;border-color:#3a1a22;color:#ff8fa3;">リセット</button>
+
+      <span style="color:var(--muted);font-size:.9rem; margin-left:6px;">右</span>
+      <button id="pickRightFiles" class="btn" type="button">画像</button>
+      <button id="pickRightFolder" class="btn" type="button">フォルダ</button>
+      <button id="clearRight" class="btn" type="button" style="background:#2a1016;border-color:#3a1a22;color:#ff8fa3;">リセット</button>
+    </div>
+
+    <!-- 再生操作 -->
     <div class="group" role="group" aria-label="再生操作">
-      <button id="togglePlay" class="btn primary" aria-pressed="false" aria-label="再生/停止">
+      <button id="togglePlay" class="btn primary" aria-pressed="false" type="button">
         <span id="playLabel">再生</span>
       </button>
-      <button id="prevBtn" class="btn icon" aria-label="前の画像">◀</button>
-      <button id="nextBtn" class="btn icon" aria-label="次の画像">▶</button>
+      <button id="prevBtn" class="btn icon" type="button" aria-label="前">◀</button>
+      <button id="nextBtn" class="btn icon" type="button" aria-label="次">▶</button>
     </div>
 
-    <div class="group" role="group" aria-label="表示・セッション設定">
+    <!-- 設定 -->
+    <div class="group" role="group" aria-label="設定">
       <label for="interval">秒数</label>
-      <input id="interval" type="number" inputmode="numeric" min="5" max="600" step="5" value="60" aria-label="切替秒数" />
+      <input id="interval" type="number" inputmode="numeric" min="5" max="600" step="5" value="60" />
       <label for="targetCount">枚数</label>
       <input id="targetCount" type="number" inputmode="numeric" min="0" step="1" value="0" aria-label="目標枚数（0で無制限）" />
-      <button id="shuffleBtn" class="btn" aria-pressed="true" aria-label="シャッフル切替">シャッフル: ON</button>
-      <button id="reshuffleBtn" class="btn" aria-label="順序を再シャッフル" title="順序を再シャッフル">🔁再シャッフル</button>
-      <button id="fsBtn" class="btn" aria-label="全画面">全画面</button>
+      <button id="shuffleBtn" class="btn" aria-pressed="true" type="button">シャッフル: ON</button>
+      <button id="reshuffleBtn" class="btn" type="button">🔁再シャッフル</button>
+      <button id="fsBtn" class="btn" type="button">全画面</button>
     </div>
 
-    <div class="group" role="group" aria-label="終了音・終了画像設定">
-      <button id="finishImageBtn" class="btn small" aria-label="終了用画像を選択">終了画像</button>
+    <!-- 終了画像・音 -->
+    <div class="group" role="group" aria-label="終了設定">
+      <button id="finishImageBtn" class="btn small" type="button">終了画像</button>
       <span id="finishImageName" style="font-size:.8rem;color:var(--muted);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">未選択</span>
-      <button id="sfxPanelToggle" class="btn small" aria-expanded="false" aria-controls="sfxPanel">終了音設定 ▾</button>
+
+      <button id="sfxPanelToggle" class="btn small" aria-expanded="false" aria-controls="sfxPanel" type="button">終了音設定 ▾</button>
       <div id="sfxPanel" class="sfx-panel">
-        <button id="pickAudio" class="btn small" aria-label="終了音声ファイルを選択">終了音声</button>
-        <button id="sfxToggle" class="btn small" aria-pressed="true" aria-label="終了音の有効/無効">音: ON</button>
+        <button id="pickAudio" class="btn small" type="button">終了音声</button>
+        <button id="sfxToggle" class="btn small" aria-pressed="true" type="button">音: ON</button>
         <label for="sfxMode">鳴動</label>
-        <select id="sfxMode" aria-label="鳴動タイミング">
+        <select id="sfxMode">
           <option value="every">毎回</option>
           <option value="last">最後のみ</option>
         </select>
         <label for="sfxVolume">音量</label>
         <input id="sfxVolume" type="range" min="0" max="1" step="0.05" value="1" />
-        <button id="sfxTest" class="btn small" aria-label="終了音を試聴">試聴</button>
+        <button id="sfxTest" class="btn small" type="button">試聴</button>
         <span id="sfxName" style="color:var(--muted); font-size:.8rem;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">未選択</span>
       </div>
     </div>
   </div>
 
   <main class="main">
-    <section class="stage" id="stage" aria-live="polite" aria-label="表示エリア">
+    <section class="stage" id="stage" aria-label="表示エリア">
       <div class="timebar">
         <div class="timebar-track">
           <div class="timebar-fill" id="timeFill"></div>
@@ -247,29 +387,68 @@
         </div>
       </div>
 
-      <div class="image-wrap" id="imageWrap">
-        <img id="art" alt="選択した画像がここに表示されます" />
+      <div class="views">
+        <!-- 1枚 -->
+        <div id="viewSingle" class="view active" aria-label="1枚表示">
+          <div class="single-wrap">
+            <img id="singleImg" alt="画像未選択" />
+          </div>
+          <div class="single-stat" id="singleStat">0 / 0 枚</div>
+        </div>
+
+        <!-- 2枚 -->
+        <div id="viewDual" class="view" aria-label="2枚表示">
+          <div class="dual-grid">
+            <div class="pane">
+              <div class="pane-head">
+                <span>左</span>
+                <span id="leftStat"><strong>0</strong> / 0</span>
+              </div>
+              <div class="pane-body">
+                <div id="leftPlaceholder" class="placeholder">左画像が未選択です</div>
+                <img id="leftImg" alt="左画像" hidden />
+              </div>
+              <div class="pane-foot" id="leftName">—</div>
+            </div>
+
+            <div class="pane">
+              <div class="pane-head">
+                <span>右</span>
+                <span id="rightStat"><strong>0</strong> / 0</span>
+              </div>
+              <div class="pane-body">
+                <div id="rightPlaceholder" class="placeholder">右画像が未選択です</div>
+                <img id="rightImg" alt="右画像" hidden />
+              </div>
+              <div class="pane-foot" id="rightName">—</div>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <!-- 3秒カウントオーバーレイ -->
+      <!-- 3秒カウント -->
       <div id="countOverlay" class="count-overlay" aria-hidden="true">
         <div id="countNumber" class="count-number">3</div>
       </div>
 
-      <div class="overlay">
-        <div class="stat" id="stat">0 / 0 枚</div>
+      <!-- 終了画面 -->
+      <div id="finishOverlay" class="finish-overlay" aria-hidden="true">
+        <div class="finish-card">
+          <img id="finishImg" alt="終了画像" hidden />
+          <div class="finish-text" id="finishText">セッション終了</div>
+          <div class="finish-sub">（再生で新しいセッションを開始できます）</div>
+        </div>
       </div>
 
       <div id="announce" class="sr-only" aria-live="polite"></div>
     </section>
   </main>
 
-  <div class="note">
-    ※ 縦長すぎる画像（スマホ壁紙など）は画面内で細く表示されます。<br>
-    &emsp;クロッキー用途では横長〜正方形（例: 4:3〜16:9）程度の比率を推奨します。
+  <div class="note" id="note">
+    ※ 縦長すぎる画像（スマホ壁紙など）は画面内で細く表示されます。クロッキー用途では横長〜正方形（例: 4:3〜16:9）程度を推奨します。
   </div>
 
-  <footer class="hint" id="appFooter">
+  <footer id="footer">
     ホットキー：
     <span class="kbd">Space</span> 再生/停止
     <span class="kbd">→</span>/<span class="kbd">←</span> 次/前
@@ -281,9 +460,12 @@
 
 </div>
 
-<!-- ファイル入力 -->
-<input id="hiddenFile" type="file" accept="image/*" multiple hidden />
-<input id="hiddenAudio" type="file" accept="audio/*" hidden />
+<!-- hidden inputs -->
+<input id="singleFiles" type="file" accept="image/*" multiple hidden />
+<input id="leftFiles" type="file" accept="image/*" multiple hidden />
+<input id="rightFiles" type="file" accept="image/*" multiple hidden />
+
+<input id="audioFile" type="file" accept="audio/*" hidden />
 <input id="finishImageFile" type="file" accept="image/*" hidden />
 
 <script src="app.js" defer></script>
