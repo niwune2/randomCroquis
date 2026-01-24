@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>クロッキー</title>
+  <style>
+    :root{
+      --bg:#0b0b0b;
+      --panel:#121212;
+      --line:#232323;
+      --fg:#f2f2f2;
+      --muted:#b7b7b7;
+      --accent:#4aa3ff;
+
+      --topbar-h:56px;
+      --img-max:700px;
+      --stage-maxw:1200px;
+    }
+    html,body{height:100%}
+    body{
+      margin:0; background:var(--bg); color:var(--fg);
+      font:15px/1.5 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI","Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,sans-serif;
+    }
+
+    /* ===== Topbar ===== */
+    .topbar{
+      position:fixed; inset:0 0 auto 0;
+      height:var(--topbar-h);
+      padding:calc(env(safe-area-inset-top) + 8px) 12px 8px;
+      box-sizing:border-box;
+      display:flex; gap:10px; align-items:center;
+      background:#0f0f0f;
+      border-bottom:1px solid var(--line);
+      z-index:10;
+      transition:height .18s ease, padding .18s ease;
+    }
+    body.running .topbar{
+      height:44px;
+      padding:calc(env(safe-area-inset-top) + 6px) 10px 6px;
+    }
+
+    .btn{
+      height:36px; padding:0 12px;
+      border-radius:12px;
+      border:1px solid #2a2a2a;
+      background:#151515;
+      color:var(--fg);
+      cursor:pointer;
+      display:inline-flex; align-items:center; justify-content:center;
+      gap:8px;
+      user-select:none;
+    }
+    .btn.icon{width:40px; padding:0}
+    .btn.primary{background:var(--accent); border-color:transparent; color:#001a2e; font-weight:800;}
+    .btn:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+
+    .menu-area{
+      display:flex; gap:8px; align-items:center; flex-wrap:wrap;
+      margin-left:auto;
+    }
+    body.running .menu-area{ display:none; }
+
+    .min-area{
+      margin-left:auto;
+      display:flex; gap:8px; align-items:center;
+    }
+    .min-area .stopOnly{display:none;}
+    body.running .min-area .stopOnly{display:inline-flex;}
+    body.running .min-area .playOnly{display:none;}
+
+    /* ===== Drawer ===== */
+    .backdrop{
+      position:fixed; inset:0;
+      background:rgba(0,0,0,.55);
+      display:none;
+      z-index:19;
+    }
+    .backdrop.open{display:block;}
+    .drawer{
+      position:fixed;
+      top:calc(var(--topbar-h) + env(safe-area-inset-top));
+      left:0;
+      width:min(420px, 92vw);
+      height:calc(100% - (var(--topbar-h) + env(safe-area-inset-top)));
+      background:var(--panel);
+      border-right:1px solid var(--line);
+      transform:translateX(-110%);
+      transition:transform .18s ease;
+      z-index:20;
+      overflow:auto;
+      padding:12px;
+      box-sizing:border-box;
+    }
+    .drawer.open{transform:translateX(0);}
+    .group{
+      border:1px solid #242424;
+      border-radius:14px;
+      padding:10px;
+      margin-bottom:10px;
+      display:flex; gap:10px; align-items:center; flex-wrap:wrap;
+      background:#141414;
+    }
+    .row{display:flex; gap:10px; align-items:center; flex-wrap:wrap;}
+    label{color:var(--muted); font-size:.9rem}
+    input[type="number"]{
+      height:36px; width:92px;
+      border-radius:12px;
+      border:1px solid #2a2a2a;
+      background:#101010;
+      color:var(--fg);
+      padding:0 10px;
+    }
+    input[type="checkbox"]{ transform:scale(1.1); }
+
+    /* ===== Main ===== */
+    .app{
+      min-height:100%;
+      padding-top:calc(var(--topbar-h) + env(safe-area-inset-top));
+      box-sizing:border-box;
+      display:grid;
+      place-items:center;
+      padding-left:12px; padding-right:12px;
+    }
+    .stage{
+      width:min(var(--stage-maxw), 100%);
+      border:1px solid #1f1f1f;
+      border-radius:16px;
+      background:#000;
+      overflow:hidden;
+      padding:12px;
+      box-sizing:border-box;
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      justify-content:flex-start;
+      min-height:320px;
+      gap:10px;
+    }
+
+    /* ★ 時間表示：画像の上、中央付近（中央寄せ） */
+    .timeLine{
+      width:100%;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      font-feature-settings:"tnum";
+      user-select:none;
+      padding:6px 0 2px;
+    }
+    .timePill{
+      display:flex; align-items:baseline; gap:8px;
+      padding:8px 14px;
+      border-radius:999px;
+      border:1px solid #2a2a2a;
+      background:#121212;
+      white-space:nowrap;
+    }
+    .timePill strong{font-size:1.15rem}
+    .timePill .muted{color:var(--muted); font-size:.95rem}
+
+    .imgWrap{
+      width:100%;
+      display:grid;
+      place-items:center;
+      padding:4px 0 12px;
+      min-height:220px;
+    }
+    img{
+      display:block;
+      width:auto; height:auto;
+      max-width:min(100%, var(--img-max));
+      max-height:min(78vh, var(--img-max));
+      object-fit:contain;
+      image-orientation:from-image;
+      box-shadow:none;
+      filter:none;
+    }
+
+    .hint{
+      color:#9a9a9a;
+      border:1px dashed #2a2a2a;
+      border-radius:12px;
+      padding:14px;
+      text-align:center;
+      max-width:600px;
+      margin:8px 0 0;
+    }
+    body.running .hint{display:none;}
+
+    /* ★ 3秒カウント表示（画像を隠して表示） */
+    .countdownBox{
+      display:none;
+      border:1px solid #2a2a2a;
+      background:#111;
+      border-radius:18px;
+      padding:26px 34px;
+      text-align:center;
+      min-width:min(520px, 90vw);
+    }
+    .countdownBox .label{color:var(--muted); font-size:.95rem; margin-bottom:8px;}
+    .countdownBox .num{font-size:3.2rem; font-weight:900; letter-spacing:.02em;}
+    .countdownBox.show{display:block;}
+
+    .small{color:var(--muted); font-size:.85rem;}
+    .mono{font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;}
+  </style>
+</head>
+
+<body>
+  <header class="topbar">
+    <button class="btn icon" id="menuBtn" aria-label="メニュー" aria-expanded="false">≡</button>
+
+    <!-- 準備中（タイマー停止中）の操作 -->
+    <div class="menu-area">
+      <button class="btn" id="pickBtn">画像を追加</button>
+      <button class="btn" id="clearBtn">全クリア</button>
+      <label>秒数</label>
+      <input id="secInput" type="number" min="5" max="600" step="5" value="60">
+      <label>枚数</label>
+      <input id="countInput" type="number" min="1" max="9999" step="1" value="10">
+      <button class="btn" id="startBtn">開始</button>
+    </div>
+
+    <!-- クロッキー中も表示する最低限 -->
+    <div class="min-area">
+      <button class="btn primary playOnly" id="playBtn">再生</button>
+      <button class="btn primary stopOnly" id="stopBtn">停止</button>
+    </div>
+  </header>
+
+  <div class="backdrop" id="backdrop"></div>
+  <aside class="drawer" id="drawer" aria-label="設定メニュー">
+    <div class="group">
+      <b style="margin-right:auto;">メニュー</b>
+      <button class="btn" id="closeDrawer">閉じる</button>
+    </div>
+
+    <div class="group">
+      <button class="btn" id="pickBtn2">画像を追加</button>
+      <button class="btn" id="clearBtn2">全クリア</button>
+      <div class="small">選択枚数：<b id="pickedCount">0</b></div>
+    </div>
+
+    <div class="group">
+      <div class="row">
+        <label>秒数</label>
+        <input id="secInput2" type="number" min="5" max="600" step="5" value="60">
+        <label>規定枚数</label>
+        <input id="countInput2" type="number" min="1" max="9999" step="1" value="10">
+        <button class="btn" id="applySettings">反映</button>
+      </div>
+      <div class="row">
+        <label class="row">
+          <input type="checkbox" id="shuffleChk">
+          シャッフル（ONにするたび再シャッフル）
+        </label>
+      </div>
+      <div class="small">※クロッキー中は「画像＋時間＋☰＋停止」だけ表示。</div>
+    </div>
+
+    <div class="group">
+      <div class="row">
+        <button class="btn" id="pickEndImgBtn">終了画像を選択</button>
+        <span class="small mono" id="endImgName">未設定</span>
+      </div>
+      <div class="row">
+        <button class="btn" id="pickEndAudioBtn">終了音声を選択</button>
+        <span class="small mono" id="endAudioName">未設定</span>
+      </div>
+      <div class="small">※VOICEVOXの音声ファイル（例: wav）を選ぶと終了時に再生します。</div>
+    </div>
+
+    <div class="group">
+      <button class="btn primary" id="startBtn2">開始</button>
+      <button class="btn" id="nextBtn">次へ</button>
+      <button class="btn" id="prevBtn">前へ</button>
+    </div>
+
+    <div class="group">
+      <div class="small">
+        現在：<span class="mono" id="posLabel">-</span>
+      </div>
+    </div>
+  </aside>
+
+  <main class="app">
+    <section class="stage" aria-label="表示エリア">
+      <!-- ★ 時間表示：画像の上、中央付近 -->
+      <div class="timeLine" aria-label="残り時間">
+        <div class="timePill">
+          <span class="muted">残り</span><strong id="timeNum">--</strong><span class="muted">秒</span>
+          <span class="muted">・</span>
+          <span class="muted">進捗</span><strong id="shownNum">--</strong><span class="muted">/</span><span class="muted" id="targetNum">--</span>
+        </div>
+      </div>
+
+      <div class="imgWrap">
+        <p class="hint" id="hint">
+          「画像を追加」で複数枚を用意してから「開始」。<br>
+          画像→（時間切れ）→3秒カウント→次画像… を繰り返し、規定枚数で終了します。
+        </p>
+
+        <div class="countdownBox" id="countdownBox" aria-label="カウントダウン">
+          <div class="label">次の画像まで</div>
+          <div class="num" id="countdownNum">3</div>
+        </div>
+
+        <img id="img" alt="画像" hidden>
+      </div>
+    </section>
+  </main>
+
+  <!-- file inputs -->
+  <input id="fileInput" type="file" accept="image/*" multiple hidden />
+  <input id="endImgInput" type="file" accept="image/*" hidden />
+  <input id="endAudioInput" type="file" accept="audio/*" hidden />
+
+  <script src="./app.js"></script>
+</body>
+</html>
