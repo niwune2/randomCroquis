@@ -16,11 +16,13 @@
   const clearBtn = $("clearBtn");
   const clearBtn2 = $("clearBtn2");
 
-  // ✅ 設定入力は drawer 側のみ
+  // 設定（drawerのみ）
   const secInput2 = $("secInput2");
   const countInput2 = $("countInput2");
   const applySettings = $("applySettings");
   const shuffleChk = $("shuffleChk");
+
+  const presetGrid = $("presetGrid");
 
   const startBtn = $("startBtn");
   const startBtn2 = $("startBtn2");
@@ -56,21 +58,20 @@
   let images = [];
   let currentIndex = 0;
 
-  // session settings
+  // settings
   let totalSec = 60;
-  let targetCount = 10;     // 規定枚数（表示する枚数）
-  const COUNTDOWN_SEC = 3;  // 3秒固定
+  let targetCount = 10;
+  const COUNTDOWN_SEC = 3;
 
   // running
-  let phase = "idle";       // "idle" | "show" | "countdown" | "ended"
+  let phase = "idle"; // "idle" | "show" | "countdown" | "ended"
   let remain = totalSec;
   let countdown = COUNTDOWN_SEC;
   let timerId = null;
   let running = false;
 
   // progress
-  // shownCountは「表示し終えた枚数（0始まりで内部管理）」のままにして、表示だけ1始まりにする
-  let shownCount = 0;
+  let shownCount = 0; // 内部は0始まり（完了数）
 
   // end assets
   let endImageUrl = null;
@@ -95,9 +96,9 @@
 
   // ===== Helpers =====
   const clampSeconds = (v) => {
+    // ✅ 上限撤廃。分単位も長時間もOK
     const n = Number.isFinite(v) ? v : 60;
-    const snapped = Math.round(n / 5) * 5;
-    return Math.max(5, Math.min(600, snapped));
+    return Math.max(1, Math.floor(n));
   };
   const clampCount = (v) => {
     const n = Number.isFinite(v) ? v : 1;
@@ -109,13 +110,23 @@
     body.classList.toggle("running", on);
   };
 
-  const render = () => {
-    // 残り秒数（idleは --）
-    timeNum.textContent = (phase === "idle") ? "--" : String(remain);
+  // ✅ 時分秒表示（1時間未満は mm:ss、以上は h:mm:ss）
+  const formatTime = (sec) => {
+    const s = Math.max(0, Math.floor(sec));
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const r = s % 60;
 
-    // ✅ 進捗表示は 1 始まり（idleは --）
-    // 「今何枚目をやっているか」を見せたいので、shownCount(完了数) + 1 を表示
-    // 終了直前の見た目崩れ防止で上限をtargetCountに丸める
+    const pad2 = (x) => String(x).padStart(2, "0");
+
+    if (h > 0) return `${h}:${pad2(m)}:${pad2(r)}`;
+    return `${pad2(m)}:${pad2(r)}`;
+  };
+
+  const render = () => {
+    timeNum.textContent = (phase === "idle") ? "--" : formatTime(remain);
+
+    // 進捗は1始まり表示
     if (phase === "idle") {
       shownNum.textContent = "--";
     } else {
@@ -144,29 +155,9 @@
     img.src = images[currentIndex].url;
   };
 
-  // ✅ カウントは画像を隠さず、オーバーレイだけ出す
   const showCountdownOverlay = () => {
     countdownOverlay.classList.add("show");
     countdownNum.textContent = String(countdown);
-  };
-
-  const cleanupAllUrls = () => {
-    for (const it of images) {
-      try { URL.revokeObjectURL(it.url); } catch {}
-    }
-    if (endImageUrl) {
-      try { URL.revokeObjectURL(endImageUrl); } catch {}
-      endImageUrl = null;
-    }
-    if (endAudioUrl) {
-      try { URL.revokeObjectURL(endAudioUrl); } catch {}
-      endAudioUrl = null;
-    }
-  };
-
-  const stopInterval = () => {
-    if (timerId) clearInterval(timerId);
-    timerId = null;
   };
 
   // ===== Shuffle =====
@@ -177,13 +168,9 @@
     }
   };
 
-  // ✅ デフォルトON：チェック状態はHTMLでchecked済み
-  // 「OFF→ONで再シャッフル」なので、初期はON扱いにしておく（再シャッフルは起こさない）
   let lastShuffleChecked = true;
-
   shuffleChk.addEventListener("change", () => {
     const now = shuffleChk.checked;
-    // OFF→ONになった瞬間だけ再シャッフル
     if (!lastShuffleChecked && now && images.length > 1) {
       shuffleArray(images);
       currentIndex = 0;
@@ -207,21 +194,35 @@
       images.push({ name: f.name, url });
     }
 
-    // ✅ デフォルトON：画像追加時点で自動シャッフル（2枚以上）
     if (shuffleChk.checked && images.length > 1) {
       shuffleArray(images);
       currentIndex = 0;
     } else if (images.length === files.length) {
-      // 初回追加でシャッフルしない場合は先頭へ
       currentIndex = 0;
     }
 
-    // 表示更新（idle中だけ表示）
     if (phase === "idle") showImage();
 
     fileInput.value = "";
     render();
   });
+
+  // ===== Preset buttons =====
+  if (presetGrid) {
+    presetGrid.addEventListener("click", (e) => {
+      const btn = e.target?.closest?.("button[data-seconds]");
+      if (!btn) return;
+      const seconds = clampSeconds(Number(btn.dataset.seconds));
+      secInput2.value = String(seconds);
+      // 反映は自動でやる（ミス防止）
+      totalSec = seconds;
+      if (phase === "idle") {
+        remain = totalSec;
+        shownCount = 0;
+      }
+      render();
+    });
+  }
 
   // ===== End assets =====
   pickEndImgBtn.addEventListener("click", () => endImgInput.click());
@@ -248,16 +249,39 @@
   });
 
   // ===== Clear =====
+  const stopInterval = () => {
+    if (timerId) clearInterval(timerId);
+    timerId = null;
+  };
+
+  const stop = (hard = false) => {
+    stopInterval();
+    setRunningUI(false);
+
+    phase = "idle";
+    remain = totalSec;
+    countdown = COUNTDOWN_SEC;
+    if (hard) shownCount = 0;
+
+    countdownOverlay.classList.remove("show");
+
+    if (images.length) showImage();
+    else {
+      img.hidden = true;
+      img.removeAttribute("src");
+      hint.style.display = "";
+    }
+    render();
+  };
+
   const clearAll = () => {
     stop(true);
-    // 画像は全クリア
     for (const it of images) {
-      try { URL.revokeObjectURL(it.url); } catch {}
+      try { URL.revokeObjectURL(it.url); } catch { }
     }
     images = [];
     currentIndex = 0;
 
-    // 終了素材は残す（必要ならここで消す）
     phase = "idle";
     remain = totalSec;
     shownCount = 0;
@@ -279,7 +303,6 @@
     totalSec = clampSeconds(Number(secInput2.value));
     targetCount = clampCount(Number(countInput2.value));
 
-    // 入力値を正規化して戻す
     secInput2.value = String(totalSec);
     countInput2.value = String(targetCount);
 
@@ -289,10 +312,9 @@
     }
     render();
   };
-
   applySettings.addEventListener("click", () => { apply(); close(); });
 
-  // 初期値読み込み（drawerのみ）
+  // 初期値（drawerのみ）
   totalSec = clampSeconds(Number(secInput2.value));
   targetCount = clampCount(Number(countInput2.value));
   secInput2.value = String(totalSec);
@@ -315,54 +337,11 @@
   nextBtn.addEventListener("click", () => { nextManual(); close(); });
 
   // ===== Core: session control =====
-  const start = () => {
-    if (!images.length) { alert("先に画像を追加してください"); return; }
-
-    stop(true); // 状態初期化
-    setRunningUI(true);
-
-    // セッション初期化
-    phase = "show";
-    remain = totalSec;
-    countdown = COUNTDOWN_SEC;
-    shownCount = 0;
-
-    // 先頭表示（範囲外防止）
-    if (currentIndex < 0 || currentIndex >= images.length) currentIndex = 0;
-    showImage();
-    render();
-
-    timerId = setInterval(tick, 1000);
-  };
-
-  // hard=true で「完全停止してidleに戻す」（終了演出なし）
-  const stop = (hard = false) => {
-    stopInterval();
-    setRunningUI(false);
-
-    phase = "idle";
-    remain = totalSec;
-    countdown = COUNTDOWN_SEC;
-    if (hard) shownCount = 0;
-
-    countdownOverlay.classList.remove("show");
-
-    if (images.length) showImage();
-    else {
-      img.hidden = true;
-      img.removeAttribute("src");
-      hint.style.display = "";
-    }
-
-    render();
-  };
-
   const endSession = async () => {
     stopInterval();
     phase = "ended";
     setRunningUI(false);
 
-    // 終了画像（あれば）
     countdownOverlay.classList.remove("show");
 
     if (endImageUrl) {
@@ -376,14 +355,10 @@
       hint.textContent = "終了しました（終了画像未設定）";
     }
 
-    // 終了音声（あれば）再生
     try {
       if (endAudio) await endAudio.play();
-    } catch {
-      // 自動再生制限などで失敗しても終了表示は維持
-    }
+    } catch { }
 
-    // idleへ（見た目は終了画像のまま）
     phase = "idle";
     remain = totalSec;
     countdown = COUNTDOWN_SEC;
@@ -391,38 +366,40 @@
     render();
   };
 
-  // 「1枚表示し終えた」＝カウント終了で確定
   const advanceAfterCountdown = () => {
     shownCount += 1;
 
-    // 規定枚数到達で終了
     if (shownCount >= targetCount) {
       render();
       endSession();
       return;
     }
 
-    // 次の画像へ（画像はループ可）
     currentIndex = (currentIndex + 1) % images.length;
     showImage();
 
-    // 次の表示フェーズ開始
     phase = "show";
     remain = totalSec;
     render();
   };
 
-  // ===== Tick: state machine =====
   const tick = () => {
     if (phase === "show") {
       remain -= 1;
 
       if (remain <= 0) {
         remain = 0;
+
+        // ✅ 最後の画像は 3カウント無しで即終了
+        const isLast = (shownCount + 1) >= targetCount;
+        if (isLast) {
+          render();
+          endSession();
+          return;
+        }
+
         phase = "countdown";
         countdown = COUNTDOWN_SEC;
-
-        // ✅ 画像は表示したまま、オーバーレイでカウント
         showCountdownOverlay();
         render();
         return;
@@ -448,14 +425,30 @@
     }
   };
 
-  // Buttons
+  const start = () => {
+    if (!images.length) { alert("先に画像を追加してください"); return; }
+
+    stop(true);
+    setRunningUI(true);
+
+    phase = "show";
+    remain = totalSec;
+    countdown = COUNTDOWN_SEC;
+    shownCount = 0;
+
+    if (currentIndex < 0 || currentIndex >= images.length) currentIndex = 0;
+    showImage();
+    render();
+
+    timerId = setInterval(tick, 1000);
+  };
+
   startBtn.addEventListener("click", start);
   startBtn2.addEventListener("click", () => { start(); close(); });
-
   playBtn.addEventListener("click", start);
   stopBtn.addEventListener("click", () => stop(false));
 
-  // Hotkeys（任意）
+  // Hotkeys
   window.addEventListener("keydown", (e) => {
     const tag = e.target && e.target.tagName;
     if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
@@ -465,13 +458,10 @@
     if (e.key.toLowerCase() === "m") drawer.classList.contains("open") ? close() : openDrawer();
   });
 
-  // Initial render
+  // Initial
   if (!images.length) {
     img.hidden = true;
     hint.style.display = "";
   }
   render();
-
-  // Cleanup
-  window.addEventListener("beforeunload", () => cleanupAllUrls());
 })();

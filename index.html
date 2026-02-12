@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="ja">
+
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
@@ -11,14 +12,12 @@
   <header class="topbar">
     <button class="btn icon" id="menuBtn" aria-label="メニュー" aria-expanded="false">≡</button>
 
-    <!-- 準備中（タイマー停止中）の最低限：入力欄は置かない -->
     <div class="menu-area" id="menuArea">
       <button class="btn" id="pickBtn">画像を追加</button>
       <button class="btn" id="clearBtn">全クリア</button>
       <button class="btn" id="startBtn">開始</button>
     </div>
 
-    <!-- クロッキー中も表示する最低限 -->
     <div class="min-area">
       <button class="btn primary playOnly" id="playBtn">再生</button>
       <button class="btn primary stopOnly" id="stopBtn">停止</button>
@@ -38,19 +37,40 @@
       <div class="small">選択枚数：<b id="pickedCount">0</b></div>
     </div>
 
-    <!-- ✅ 秒数・規定枚数はここ（ハンバーガー内）のみ -->
     <div class="group">
       <div class="row">
-        <label>秒数</label>
-        <input id="secInput2" type="number" min="5" max="600" step="5" value="60">
+        <label>時間</label>
+        <!-- 上限撤廃（長時間OK） -->
+        <input id="secInput2" type="number" min="1" step="1" value="60">
+        <span class="small muted">秒</span>
+
         <label>規定枚数</label>
         <input id="countInput2" type="number" min="1" max="9999" step="1" value="10">
+
         <button class="btn" id="applySettings">反映</button>
+      </div>
+
+      <!-- ✅ プリセット（ここが追加） -->
+      <div class="presetWrap" aria-label="時間プリセット">
+        <div class="presetLabel small">プリセット</div>
+        <div class="presetGrid" id="presetGrid">
+          <!-- 短時間（クロッキー） -->
+          <button class="btn preset" type="button" data-seconds="30">30秒</button>
+          <button class="btn preset" type="button" data-seconds="60">60秒</button>
+          <button class="btn preset" type="button" data-seconds="90">90秒</button>
+          <button class="btn preset" type="button" data-seconds="120">2分</button>
+
+          <!-- 中〜長時間（デッサン） -->
+          <button class="btn preset" type="button" data-seconds="600">10分</button>
+          <button class="btn preset" type="button" data-seconds="1200">20分</button>
+          <button class="btn preset" type="button" data-seconds="1800">30分</button>
+          <button class="btn preset" type="button" data-seconds="2700">45分</button>
+          <button class="btn preset" type="button" data-seconds="3600">1時間</button>
+        </div>
       </div>
 
       <div class="row">
         <label class="row">
-          <!-- ✅ シャッフルはデフォルトON -->
           <input type="checkbox" id="shuffleChk" checked>
           シャッフル（OFF→ONで再シャッフル）
         </label>
@@ -68,7 +88,7 @@
         <button class="btn" id="pickEndAudioBtn">終了音声を選択</button>
         <span class="small mono" id="endAudioName">未設定</span>
       </div>
-      <div class="small">※VOICEVOX等で生成した音声ファイル（wav/mp3等）を終了時に1回再生。</div>
+      <div class="small">※VOICEVOX等の音声ファイル（wav/mp3等）を終了時に1回再生。</div>
     </div>
 
     <div class="group">
@@ -86,10 +106,9 @@
 
   <main class="app">
     <section class="stage" aria-label="表示エリア">
-      <!-- ✅ 時間表示：画像の上、中央付近（画像には被せない） -->
       <div class="timeLine" aria-label="残り時間">
         <div class="timePill">
-          <span class="muted">残り</span><strong id="timeNum">--</strong><span class="muted">秒</span>
+          <span class="muted">残り</span><strong id="timeNum">--</strong>
           <span class="muted">・</span>
           <span class="muted">進捗</span><strong id="shownNum">--</strong>
           <span class="muted">/</span><span class="muted" id="targetNum">--</span>
@@ -102,7 +121,6 @@
           画像→（時間切れ）→3秒カウント→次画像… を繰り返し、規定枚数で終了します。
         </p>
 
-        <!-- ✅ 3秒カウントは画像にオーバーレイ -->
         <div class="countdownOverlay" id="countdownOverlay" aria-label="カウントダウン">
           <div class="countdownInner">
             <div class="label">次の画像まで</div>
@@ -115,11 +133,11 @@
     </section>
   </main>
 
-  <!-- file inputs -->
   <input id="fileInput" type="file" accept="image/*" multiple hidden />
   <input id="endImgInput" type="file" accept="image/*" hidden />
   <input id="endAudioInput" type="file" accept="audio/*" hidden />
 
   <script src="./app.js"></script>
 </body>
+
 </html>
