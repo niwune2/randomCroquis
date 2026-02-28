@@ -78,6 +78,37 @@
   let endAudioUrl = null;
   let endAudio = null;
 
+  // ====== 追加 state ======
+  let waitImageUrl = null;
+
+  // ====== DOM取得追加 ======
+  const pickWaitImgBtn = $("pickWaitImgBtn");
+  const waitImgInput = $("waitImgInput");
+
+  // ====== 待機画像設定 ======
+  pickWaitImgBtn?.addEventListener("click", () => waitImgInput.click());
+
+  waitImgInput?.addEventListener("change", (e) => {
+    const f = e.target.files && e.target.files[0];
+    if (!f) return;
+
+    if (waitImageUrl) URL.revokeObjectURL(waitImageUrl);
+    waitImageUrl = URL.createObjectURL(f);
+    waitImgInput.value = "";
+
+    if (phase === "idle") {
+      img.hidden = false;
+      img.src = waitImageUrl;
+      hint.style.display = "none";
+    }
+  });
+  // ====== localStorage 復元（終了画像） ======
+  const savedEndImage = localStorage.getItem("endImageData");
+  if (savedEndImage) {
+    endImageUrl = savedEndImage;
+    endImgName.textContent = "保存済み終了画像";
+  }
+
   // ===== Drawer open/close =====
   const openDrawer = () => {
     drawer.classList.add("open");
@@ -123,21 +154,24 @@
     return `${pad2(m)}:${pad2(r)}`;
   };
 
+  // ====== render修正 ======
   const render = () => {
-    timeNum.textContent = (phase === "idle") ? "--" : formatTime(remain);
 
-    // 進捗は1始まり表示
+    // ✅ idleでも時間表示
+    timeNum.textContent = formatTime(remain);
+
     if (phase === "idle") {
       shownNum.textContent = "--";
     } else {
       const displayProgress = Math.min(shownCount + 1, targetCount);
       shownNum.textContent = String(displayProgress);
     }
-    targetNum.textContent = String(targetCount);
 
+    targetNum.textContent = String(targetCount);
     pickedCount.textContent = String(images.length);
+
     posLabel.textContent = images.length
-      ? `${currentIndex + 1}/${images.length}  ${images[currentIndex]?.name ?? ""}`
+      ? `${currentIndex + 1}/${images.length} ${images[currentIndex]?.name ?? ""}`
       : "-";
   };
 
@@ -196,12 +230,7 @@
 
     if (shuffleChk.checked && images.length > 1) {
       shuffleArray(images);
-      currentIndex = 0;
-    } else if (images.length === files.length) {
-      currentIndex = 0;
     }
-
-    if (phase === "idle") showImage();
 
     fileInput.value = "";
     render();
@@ -224,14 +253,33 @@
     });
   }
 
+  // ====== idle状態表示制御 ======
+  const showIdleScreen = () => {
+    if (waitImageUrl) {
+      img.hidden = false;
+      img.src = waitImageUrl;
+      hint.style.display = "none";
+    } else {
+      img.hidden = true;
+      img.removeAttribute("src");
+      hint.style.display = "";
+    }
+  };
+
   // ===== End assets =====
   pickEndImgBtn.addEventListener("click", () => endImgInput.click());
+  // ====== 終了画像 永続保存 ======
   endImgInput.addEventListener("change", (e) => {
     const f = e.target.files && e.target.files[0];
     if (!f) return;
-    if (endImageUrl) URL.revokeObjectURL(endImageUrl);
-    endImageUrl = URL.createObjectURL(f);
-    endImgName.textContent = f.name;
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      endImageUrl = ev.target.result;
+      localStorage.setItem("endImageData", endImageUrl);
+      endImgName.textContent = f.name;
+    };
+    reader.readAsDataURL(f);
     endImgInput.value = "";
   });
 
@@ -254,6 +302,7 @@
     timerId = null;
   };
 
+  // ====== stop修正 ======
   const stop = (hard = false) => {
     stopInterval();
     setRunningUI(false);
@@ -261,16 +310,12 @@
     phase = "idle";
     remain = totalSec;
     countdown = COUNTDOWN_SEC;
+
     if (hard) shownCount = 0;
 
     countdownOverlay.classList.remove("show");
 
-    if (images.length) showImage();
-    else {
-      img.hidden = true;
-      img.removeAttribute("src");
-      hint.style.display = "";
-    }
+    showIdleScreen();
     render();
   };
 
@@ -463,5 +508,7 @@
     img.hidden = true;
     hint.style.display = "";
   }
+  // ====== 初期表示 ======
+  showIdleScreen();
   render();
 })();
